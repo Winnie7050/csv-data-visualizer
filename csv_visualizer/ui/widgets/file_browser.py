@@ -10,11 +10,11 @@ from typing import Dict, List, Any, Optional
 
 from PyQt6.QtWidgets import (QWidget, QVBoxLayout, QTreeView, QHeaderView, 
                           QLabel, QLineEdit, QPushButton, QAbstractItemView, 
-                          QHBoxLayout, QComboBox, QSizePolicy, QMenu, 
-                          QStandardItem, QStandardItemModel)
+                          QHBoxLayout, QComboBox, QSizePolicy, QMenu)
 from PyQt6.QtCore import (Qt, QModelIndex, QDir, QSortFilterProxyModel, 
                        pyqtSignal, pyqtSlot, QFileSystemModel)
-from PyQt6.QtGui import QIcon, QAction, QKeySequence
+from PyQt6.QtGui import (QIcon, QAction, QKeySequence, QStandardItem, 
+                      QStandardItemModel)
 
 from csv_visualizer.utils.logging_utils import get_module_logger
 from csv_visualizer.data.file_scanner import FileScanner
