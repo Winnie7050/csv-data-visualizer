@@ -1,0 +1,14 @@
+# Core dependencies
+python-dateutil>=2.8.2
+pyqt6>=6.4.0
+pyqt6-webengine>=6.4.0
+pandas>=1.5.0
+numpy>=1.23.0
+plotly>=5.10.0
+matplotlib>=3.6.0
+
+# Development tools
+pyinstaller>=5.7.0
+black>=22.12.0
+pylint>=2.15.0
+pytest>=7.0.0
