@@ -46,14 +46,20 @@ class Application:
         try:
             dummy_web_view = QWebEngineView()  # Create a dummy view to initialize QWebEngine
             self.logger.info("QWebEngineView successfully initialized")
+            
+            # Try to configure WebEngine settings - handle API differences
+            try:
+                # Try the globalSettings method (which is used in newer versions of PyQt)
+                webengine_settings = QWebEngineSettings.globalSettings()
+                webengine_settings.setAttribute(QWebEngineSettings.WebAttribute.JavascriptEnabled, True)
+                webengine_settings.setAttribute(QWebEngineSettings.WebAttribute.LocalContentCanAccessRemoteUrls, True)
+                webengine_settings.setAttribute(QWebEngineSettings.WebAttribute.ScrollAnimatorEnabled, True)
+                self.logger.info("WebEngine settings configured using globalSettings()")
+            except Exception as settings_error:
+                self.logger.warning(f"Could not configure WebEngine settings: {str(settings_error)}")
+                # We'll continue without setting WebEngine settings
         except Exception as e:
             self.logger.warning(f"Error initializing QWebEngineView: {str(e)}. Proceeding with fallback options.")
-        
-        # Configure WebEngine settings
-        webengine_settings = QWebEngineSettings.defaultSettings()
-        webengine_settings.setAttribute(QWebEngineSettings.WebAttribute.JavascriptEnabled, True)
-        webengine_settings.setAttribute(QWebEngineSettings.WebAttribute.LocalContentCanAccessRemoteUrls, True)
-        webengine_settings.setAttribute(QWebEngineSettings.WebAttribute.ScrollAnimatorEnabled, True)
         
         # Apply dark theme
         self._apply_dark_theme()
