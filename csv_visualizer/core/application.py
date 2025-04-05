@@ -11,6 +11,7 @@ from typing import List, Optional, Dict, Any, Tuple
 from PyQt6.QtWidgets import QApplication, QMessageBox
 from PyQt6.QtCore import Qt
 from PyQt6.QtWebEngineCore import QWebEngineSettings
+from PyQt6.QtWebEngineWidgets import QWebEngineView
 
 from csv_visualizer.ui.main_window import MainWindow
 from csv_visualizer.data.data_manager import DataManager
@@ -39,6 +40,14 @@ class Application:
         self.qt_app.setApplicationName("CSV Data Visualizer")
         self.qt_app.setApplicationVersion(self.settings.version)
         self.qt_app.setOrganizationName("MCP")
+        
+        # Initialize QWebEngine before configuring settings
+        # This ensures QWebEngine is properly initialized with command line args
+        try:
+            dummy_web_view = QWebEngineView()  # Create a dummy view to initialize QWebEngine
+            self.logger.info("QWebEngineView successfully initialized")
+        except Exception as e:
+            self.logger.warning(f"Error initializing QWebEngineView: {str(e)}. Proceeding with fallback options.")
         
         # Configure WebEngine settings
         webengine_settings = QWebEngineSettings.defaultSettings()
@@ -349,3 +358,15 @@ class Application:
         except Exception as e:
             self.logger.error(f"Error calculating metrics: {str(e)}", exc_info=True)
             raise
+            
+    def cleanup(self):
+        """Clean up resources before exit."""
+        # Clean up web engine resources
+        if hasattr(self, 'main_window') and self.main_window:
+            if hasattr(self.main_window, 'chart_view') and self.main_window.chart_view:
+                if hasattr(self.main_window.chart_view, 'plotly_view'):
+                    try:
+                        self.main_window.chart_view.plotly_view.setHtml("")
+                        self.main_window.chart_view.plotly_view.close()
+                    except Exception as e:
+                        self.logger.warning(f"Error cleaning up web resources: {str(e)}")
