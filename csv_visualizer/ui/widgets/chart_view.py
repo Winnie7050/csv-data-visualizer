@@ -65,10 +65,13 @@ class PlotlyWebView(QWebEngineView):
             self._temp_file.flush()
             
             # Load HTML file
-            self.load(QUrl.fromLocalFile(self._temp_file.name))
+            try:
+                self.load(QUrl.fromLocalFile(self._temp_file.name))
+            except Exception as web_error:
+                # If QWebEngineView fails, raise exception to fall back to matplotlib
+                raise Exception(f"QWebEngineView error: {str(web_error)}")
             
         except Exception as e:
-            print(f"Error setting figure: {str(e)}")
             # Create a simple HTML with error message
             html = f"""
             <html>
@@ -104,7 +107,11 @@ class PlotlyWebView(QWebEngineView):
             self._temp_file = tempfile.NamedTemporaryFile(suffix='.html', delete=False)
             self._temp_file.write(html.encode('utf-8'))
             self._temp_file.flush()
-            self.load(QUrl.fromLocalFile(self._temp_file.name))
+            try:
+                self.load(QUrl.fromLocalFile(self._temp_file.name))
+            except Exception:
+                # Bubble up the exception to trigger fallback to Matplotlib
+                raise Exception(f"Error setting Plotly figure: {str(e)}")
     
     def save_as_image(self, file_path: str) -> bool:
         """
@@ -270,8 +277,18 @@ class ChartViewWidget(QWidget):
         self.frame_layout.setContentsMargins(0, 0, 0, 0)
         self.frame_layout.setSpacing(0)
         
-        # Create plotly view
-        self.plotly_view = PlotlyWebView()
+        # Create plotly view with error handling
+        try:
+            self.logger.info("Creating Plotly web view")
+            self.plotly_view = PlotlyWebView()
+            self.logger.info("Plotly web view created successfully")
+        except Exception as e:
+            self.logger.error(f"Error initializing Plotly view: {str(e)}", exc_info=True)
+            # Create a fallback widget if web view fails
+            self.plotly_view = QWidget()
+            self.fallback_layout = QVBoxLayout(self.plotly_view)
+            self.fallback_label = QLabel("Plotly visualization not available. Using Matplotlib fallback.")
+            self.fallback_layout.addWidget(self.fallback_label)
         
         # Create matplotlib canvas
         self.matplotlib_canvas = MatplotlibCanvas()
@@ -308,14 +325,67 @@ class ChartViewWidget(QWidget):
             # Determine figure type and display accordingly
             if 'plotly' in str(type(fig)).lower():
                 self.logger.info("Displaying Plotly figure")
-                self.engine_type = 'plotly'
                 
-                # Clear frame layout
-                self._clear_frame_layout()
-                
-                # Show plotly view
-                self.frame_layout.addWidget(self.plotly_view)
-                self.plotly_view.set_figure(fig)
+                try:
+                    # Try using Plotly first
+                    self.engine_type = 'plotly'
+                    
+                    # Clear frame layout
+                    self._clear_frame_layout()
+                    
+                    # Show plotly view
+                    self.frame_layout.addWidget(self.plotly_view)
+                    self.plotly_view.set_figure(fig)
+                    
+                except Exception as plotly_error:
+                    self.logger.error(f"Error displaying Plotly figure: {str(plotly_error)}", exc_info=True)
+                    # Fall back to matplotlib
+                    self.logger.info("Falling back to Matplotlib")
+                    
+                    # Create a simple Matplotlib figure from Plotly data
+                    try:
+                        self.engine_type = 'matplotlib'
+                        
+                        # Clear frame layout
+                        self._clear_frame_layout()
+                        
+                        # Convert Plotly to Matplotlib if possible (simplified approach)
+                        if hasattr(fig, 'data') and len(fig.data) > 0:
+                            mpl_fig = Figure(figsize=(10, 6))
+                            ax = mpl_fig.add_subplot(111)
+                            
+                            # Iterate through traces
+                            for trace in fig.data:
+                                x = trace.get('x', [])
+                                y = trace.get('y', [])
+                                name = trace.get('name', '')
+                                ax.plot(x, y, label=name)
+                            
+                            # Add title and labels if available
+                            if hasattr(fig, 'layout'):
+                                if hasattr(fig.layout, 'title') and hasattr(fig.layout.title, 'text'):
+                                    ax.set_title(fig.layout.title.text)
+                                if hasattr(fig.layout, 'xaxis') and hasattr(fig.layout.xaxis, 'title') and hasattr(fig.layout.xaxis.title, 'text'):
+                                    ax.set_xlabel(fig.layout.xaxis.title.text)
+                                if hasattr(fig.layout, 'yaxis') and hasattr(fig.layout.yaxis, 'title') and hasattr(fig.layout.yaxis.title, 'text'):
+                                    ax.set_ylabel(fig.layout.yaxis.title.text)
+                            
+                            # Add legend if more than one trace
+                            if len(fig.data) > 1:
+                                ax.legend()
+                            
+                            # Show the figure
+                            self.frame_layout.addWidget(self.matplotlib_canvas)
+                            self.matplotlib_canvas.set_figure(mpl_fig)
+                        else:
+                            # If conversion fails, show error
+                            self.show_placeholder("Error converting Plotly to Matplotlib")
+                            raise Exception("Cannot convert Plotly figure to Matplotlib")
+                    except Exception as convert_error:
+                        self.logger.error(f"Error converting to Matplotlib: {str(convert_error)}", exc_info=True)
+                        self.show_placeholder(f"Visualization error: {str(plotly_error)}")
+                        self.engine_type = None
+                        self.current_figure = None
                 
             elif 'figure' in str(type(fig)).lower():
                 self.logger.info("Displaying Matplotlib figure")
