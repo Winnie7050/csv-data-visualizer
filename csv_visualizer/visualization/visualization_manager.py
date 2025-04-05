@@ -6,6 +6,8 @@ This module contains the VisualizationManager class for creating visualizations.
 
 import logging
 from typing import Dict, List, Any, Optional, Union, Tuple
+import sys
+import traceback
 
 import pandas as pd
 import numpy as np
@@ -45,12 +47,23 @@ class VisualizationManager:
         # Try importing required modules to determine which engine to use as primary
         try:
             import plotly
-            from PyQt6.QtWebEngineWidgets import QWebEngineView
-            self.primary_engine = 'plotly'
-            self.logger.info("Using Plotly as primary visualization engine")
+            try:
+                from PyQt6.QtWebEngineWidgets import QWebEngineView
+                # Test if QWebEngineView can be instantiated
+                try:
+                    test_view = QWebEngineView()
+                    del test_view  # Clean up
+                    self.primary_engine = 'plotly'
+                    self.logger.info("Using Plotly as primary visualization engine")
+                except Exception:
+                    self.primary_engine = 'matplotlib'
+                    self.logger.warning("QWebEngineView instantiation failed, using Matplotlib as primary engine")
+            except ImportError:
+                self.primary_engine = 'matplotlib'
+                self.logger.warning("PyQt6-WebEngine not available, using Matplotlib as primary engine")
         except ImportError:
             self.primary_engine = 'matplotlib'
-            self.logger.info("Using Matplotlib as primary visualization engine (PyQt6-WebEngine not available)")
+            self.logger.warning("Plotly not available, using Matplotlib as primary engine")
     
     def create_visualization(self, df: pd.DataFrame, config: Dict[str, Any]) -> Any:
         """
@@ -83,9 +96,20 @@ class VisualizationManager:
             create_func = self.chart_types.get(chart_type)
             
             if create_func:
-                fig = create_func(df, config)
-                self.logger.info(f"Visualization created successfully: {chart_type}")
-                return fig
+                try:
+                    fig = create_func(df, config)
+                    self.logger.info(f"Visualization created successfully: {chart_type}")
+                    return fig
+                except Exception as chart_error:
+                    self.logger.error(f"Error creating {chart_type}: {str(chart_error)}", exc_info=True)
+                    
+                    # If specific chart type fails, try falling back to a simpler chart type
+                    if chart_type != "Line Chart":
+                        self.logger.info(f"Falling back to Line Chart due to error in {chart_type}")
+                        return self._create_line_chart(df, config)
+                    else:
+                        # Re-raise if we're already trying a line chart
+                        raise
             else:
                 self.logger.error(f"Unknown chart type: {chart_type}")
                 # Fall back to line chart
@@ -93,7 +117,27 @@ class VisualizationManager:
                 
         except Exception as e:
             self.logger.error(f"Error creating visualization: {str(e)}", exc_info=True)
-            raise
+            
+            # Create a very simple Matplotlib chart as absolute fallback
+            try:
+                self.logger.info("Creating simple fallback visualization")
+                import matplotlib.pyplot as plt
+                from matplotlib.figure import Figure
+                
+                # Create a simple error figure
+                fig = Figure(figsize=(8, 6))
+                ax = fig.add_subplot(111)
+                ax.text(0.5, 0.5, f"Error creating visualization:\n{str(e)}", 
+                       horizontalalignment='center', verticalalignment='center',
+                       transform=ax.transAxes, fontsize=12, color='red')
+                ax.set_title("Visualization Error")
+                ax.set_xticks([])
+                ax.set_yticks([])
+                
+                return fig
+            except Exception as fallback_error:
+                self.logger.error(f"Even fallback visualization failed: {str(fallback_error)}")
+                raise e  # Re-raise the original error
     
     def calculate_metrics(self, df: pd.DataFrame, config: Dict[str, Any]) -> Dict[str, Any]:
         """
@@ -386,11 +430,24 @@ class VisualizationManager:
         """
         if self.primary_engine == 'plotly':
             try:
+                self.logger.info("Attempting to create line chart with Plotly")
                 return self.plotly_engine.create_line_chart(df, config)
             except Exception as e:
+                # Get detailed error information
+                exc_type, exc_value, exc_traceback = sys.exc_info()
+                traceback_details = traceback.format_exception(exc_type, exc_value, exc_traceback)
+                error_msg = "".join(traceback_details)
+                
                 self.logger.warning(f"Plotly engine failed, falling back to Matplotlib: {str(e)}")
-                return self.matplotlib_engine.create_line_chart(df, config)
+                self.logger.debug(f"Detailed error: {error_msg}")
+                
+                try:
+                    return self.matplotlib_engine.create_line_chart(df, config)
+                except Exception as mpl_error:
+                    self.logger.error(f"Matplotlib engine also failed: {str(mpl_error)}", exc_info=True)
+                    raise Exception(f"Both visualization engines failed: {str(e)}, then: {str(mpl_error)}")
         else:
+            self.logger.info("Creating line chart with Matplotlib")
             return self.matplotlib_engine.create_line_chart(df, config)
     
     def _create_bar_chart(self, df: pd.DataFrame, config: Dict[str, Any]) -> Any:
@@ -406,11 +463,17 @@ class VisualizationManager:
         """
         if self.primary_engine == 'plotly':
             try:
+                self.logger.info("Attempting to create bar chart with Plotly")
                 return self.plotly_engine.create_bar_chart(df, config)
             except Exception as e:
                 self.logger.warning(f"Plotly engine failed, falling back to Matplotlib: {str(e)}")
-                return self.matplotlib_engine.create_bar_chart(df, config)
+                try:
+                    return self.matplotlib_engine.create_bar_chart(df, config)
+                except Exception as mpl_error:
+                    self.logger.error(f"Matplotlib engine also failed: {str(mpl_error)}", exc_info=True)
+                    raise Exception(f"Both visualization engines failed: {str(e)}, then: {str(mpl_error)}")
         else:
+            self.logger.info("Creating bar chart with Matplotlib")
             return self.matplotlib_engine.create_bar_chart(df, config)
     
     def _create_pie_chart(self, df: pd.DataFrame, config: Dict[str, Any]) -> Any:
@@ -426,11 +489,17 @@ class VisualizationManager:
         """
         if self.primary_engine == 'plotly':
             try:
+                self.logger.info("Attempting to create pie chart with Plotly")
                 return self.plotly_engine.create_pie_chart(df, config)
             except Exception as e:
                 self.logger.warning(f"Plotly engine failed, falling back to Matplotlib: {str(e)}")
-                return self.matplotlib_engine.create_pie_chart(df, config)
+                try:
+                    return self.matplotlib_engine.create_pie_chart(df, config)
+                except Exception as mpl_error:
+                    self.logger.error(f"Matplotlib engine also failed: {str(mpl_error)}", exc_info=True)
+                    raise Exception(f"Both visualization engines failed: {str(e)}, then: {str(mpl_error)}")
         else:
+            self.logger.info("Creating pie chart with Matplotlib")
             return self.matplotlib_engine.create_pie_chart(df, config)
     
     def _create_diverging_bar_chart(self, df: pd.DataFrame, config: Dict[str, Any]) -> Any:
@@ -446,9 +515,15 @@ class VisualizationManager:
         """
         if self.primary_engine == 'plotly':
             try:
+                self.logger.info("Attempting to create diverging bar chart with Plotly")
                 return self.plotly_engine.create_diverging_bar_chart(df, config)
             except Exception as e:
                 self.logger.warning(f"Plotly engine failed, falling back to Matplotlib: {str(e)}")
-                return self.matplotlib_engine.create_diverging_bar_chart(df, config)
+                try:
+                    return self.matplotlib_engine.create_diverging_bar_chart(df, config)
+                except Exception as mpl_error:
+                    self.logger.error(f"Matplotlib engine also failed: {str(mpl_error)}", exc_info=True)
+                    raise Exception(f"Both visualization engines failed: {str(e)}, then: {str(mpl_error)}")
         else:
+            self.logger.info("Creating diverging bar chart with Matplotlib")
             return self.matplotlib_engine.create_diverging_bar_chart(df, config)
