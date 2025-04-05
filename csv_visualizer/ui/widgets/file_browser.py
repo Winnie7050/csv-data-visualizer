@@ -12,7 +12,7 @@ from PyQt6.QtWidgets import (QWidget, QVBoxLayout, QTreeView, QHeaderView,
                           QLabel, QLineEdit, QPushButton, QAbstractItemView, 
                           QHBoxLayout, QComboBox, QSizePolicy, QMenu)
 from PyQt6.QtCore import (Qt, QModelIndex, QDir, QSortFilterProxyModel, 
-                       pyqtSignal, pyqtSlot, QFileSystemModel)
+                       pyqtSignal, pyqtSlot)
 from PyQt6.QtGui import (QIcon, QAction, QKeySequence, QStandardItem, 
                       QStandardItemModel)
 
