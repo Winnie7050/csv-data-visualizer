@@ -41,6 +41,16 @@ class VisualizationManager:
             "Pie Chart": self._create_pie_chart,
             "Diverging Bar": self._create_diverging_bar_chart,
         }
+        
+        # Try importing required modules to determine which engine to use as primary
+        try:
+            import plotly
+            from PyQt6.QtWebEngineWidgets import QWebEngineView
+            self.primary_engine = 'plotly'
+            self.logger.info("Using Plotly as primary visualization engine")
+        except ImportError:
+            self.primary_engine = 'matplotlib'
+            self.logger.info("Using Matplotlib as primary visualization engine (PyQt6-WebEngine not available)")
     
     def create_visualization(self, df: pd.DataFrame, config: Dict[str, Any]) -> Any:
         """
@@ -372,9 +382,16 @@ class VisualizationManager:
             config: Visualization configuration
 
         Returns:
-            Plotly figure object
+            Plotly or Matplotlib figure object
         """
-        return self.plotly_engine.create_line_chart(df, config)
+        if self.primary_engine == 'plotly':
+            try:
+                return self.plotly_engine.create_line_chart(df, config)
+            except Exception as e:
+                self.logger.warning(f"Plotly engine failed, falling back to Matplotlib: {str(e)}")
+                return self.matplotlib_engine.create_line_chart(df, config)
+        else:
+            return self.matplotlib_engine.create_line_chart(df, config)
     
     def _create_bar_chart(self, df: pd.DataFrame, config: Dict[str, Any]) -> Any:
         """
@@ -385,9 +402,16 @@ class VisualizationManager:
             config: Visualization configuration
 
         Returns:
-            Plotly figure object
+            Plotly or Matplotlib figure object
         """
-        return self.plotly_engine.create_bar_chart(df, config)
+        if self.primary_engine == 'plotly':
+            try:
+                return self.plotly_engine.create_bar_chart(df, config)
+            except Exception as e:
+                self.logger.warning(f"Plotly engine failed, falling back to Matplotlib: {str(e)}")
+                return self.matplotlib_engine.create_bar_chart(df, config)
+        else:
+            return self.matplotlib_engine.create_bar_chart(df, config)
     
     def _create_pie_chart(self, df: pd.DataFrame, config: Dict[str, Any]) -> Any:
         """
@@ -398,9 +422,16 @@ class VisualizationManager:
             config: Visualization configuration
 
         Returns:
-            Plotly figure object
+            Plotly or Matplotlib figure object
         """
-        return self.plotly_engine.create_pie_chart(df, config)
+        if self.primary_engine == 'plotly':
+            try:
+                return self.plotly_engine.create_pie_chart(df, config)
+            except Exception as e:
+                self.logger.warning(f"Plotly engine failed, falling back to Matplotlib: {str(e)}")
+                return self.matplotlib_engine.create_pie_chart(df, config)
+        else:
+            return self.matplotlib_engine.create_pie_chart(df, config)
     
     def _create_diverging_bar_chart(self, df: pd.DataFrame, config: Dict[str, Any]) -> Any:
         """
@@ -411,6 +442,13 @@ class VisualizationManager:
             config: Visualization configuration
 
         Returns:
-            Plotly figure object
+            Plotly or Matplotlib figure object
         """
-        return self.plotly_engine.create_diverging_bar_chart(df, config)
+        if self.primary_engine == 'plotly':
+            try:
+                return self.plotly_engine.create_diverging_bar_chart(df, config)
+            except Exception as e:
+                self.logger.warning(f"Plotly engine failed, falling back to Matplotlib: {str(e)}")
+                return self.matplotlib_engine.create_diverging_bar_chart(df, config)
+        else:
+            return self.matplotlib_engine.create_diverging_bar_chart(df, config)
