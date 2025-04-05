@@ -11,7 +11,7 @@ from typing import Dict, List, Any, Optional
 from PyQt6.QtWidgets import (QMainWindow, QWidget, QSplitter, QTabWidget, 
                           QToolBar, QStatusBar, QMenu, QMenuBar, QFileDialog,
                           QMessageBox, QApplication, QVBoxLayout, QHBoxLayout,
-                          QLabel, QComboBox, QPushButton, QAction, QToolButton)
+                          QLabel, QComboBox, QPushButton, QToolButton)
 from PyQt6.QtCore import Qt, QSize, pyqtSignal, pyqtSlot
 from PyQt6.QtGui import QIcon, QAction, QKeySequence
 
