@@ -10,6 +10,7 @@ from typing import List, Optional, Dict, Any, Tuple
 
 from PyQt6.QtWidgets import QApplication, QMessageBox
 from PyQt6.QtCore import Qt
+from PyQt6.QtWebEngineCore import QWebEngineSettings
 
 from csv_visualizer.ui.main_window import MainWindow
 from csv_visualizer.data.data_manager import DataManager
@@ -33,11 +34,17 @@ class Application:
         # Settings
         self.settings = Settings()
         
-        # Qt application
-        self.qt_app = QApplication([])
+        # Qt application - Make sure to pass sys.argv
+        self.qt_app = QApplication(sys.argv)
         self.qt_app.setApplicationName("CSV Data Visualizer")
         self.qt_app.setApplicationVersion(self.settings.version)
         self.qt_app.setOrganizationName("MCP")
+        
+        # Configure WebEngine settings
+        webengine_settings = QWebEngineSettings.defaultSettings()
+        webengine_settings.setAttribute(QWebEngineSettings.WebAttribute.JavascriptEnabled, True)
+        webengine_settings.setAttribute(QWebEngineSettings.WebAttribute.LocalContentCanAccessRemoteUrls, True)
+        webengine_settings.setAttribute(QWebEngineSettings.WebAttribute.ScrollAnimatorEnabled, True)
         
         # Apply dark theme
         self._apply_dark_theme()
