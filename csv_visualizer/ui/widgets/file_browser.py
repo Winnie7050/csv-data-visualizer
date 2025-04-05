@@ -9,10 +9,11 @@ import logging
 from typing import Dict, List, Any, Optional
 
 from PyQt6.QtWidgets import (QWidget, QVBoxLayout, QTreeView, QHeaderView, 
-                          QLabel, QLineEdit, QPushButton, QFileSystemModel,
-                          QAbstractItemView, QHBoxLayout, QComboBox, 
-                          QSizePolicy, QMenu, QStandardItem, QStandardItemModel)
-from PyQt6.QtCore import Qt, QModelIndex, QDir, QSortFilterProxyModel, pyqtSignal, pyqtSlot
+                          QLabel, QLineEdit, QPushButton, QAbstractItemView, 
+                          QHBoxLayout, QComboBox, QSizePolicy, QMenu, 
+                          QStandardItem, QStandardItemModel)
+from PyQt6.QtCore import (Qt, QModelIndex, QDir, QSortFilterProxyModel, 
+                       pyqtSignal, pyqtSlot, QFileSystemModel)
 from PyQt6.QtGui import QIcon, QAction, QKeySequence
 
 from csv_visualizer.utils.logging_utils import get_module_logger
