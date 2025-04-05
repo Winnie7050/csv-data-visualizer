@@ -5,15 +5,23 @@ This module contains the ChartViewWidget class for displaying visualizations.
 """
 
 import os
+import sys
 import logging
 import tempfile
+import traceback
 from typing import Dict, List, Any, Optional, Union
 
 from PyQt6.QtWidgets import (QWidget, QVBoxLayout, QHBoxLayout, QLabel, 
-                          QSizePolicy, QFrame, QSpacerItem)
+                          QSizePolicy, QFrame, QSpacerItem, QMessageBox)
 from PyQt6.QtCore import Qt, QUrl, pyqtSignal, pyqtSlot
-from PyQt6.QtWebEngineWidgets import QWebEngineView
 from PyQt6.QtGui import QImage, QPainter, QPixmap
+
+# Import WebEngine components with error handling
+try:
+    from PyQt6.QtWebEngineWidgets import QWebEngineView
+    webengine_available = True
+except ImportError:
+    webengine_available = False
 
 import plotly.io as pio
 import matplotlib.pyplot as plt
@@ -23,15 +31,44 @@ from matplotlib.figure import Figure
 from csv_visualizer.utils.logging_utils import get_module_logger
 
 
-class PlotlyWebView(QWebEngineView):
+class PlotlyWebView(QWidget):
     """Plotly Web View for displaying Plotly visualizations."""
     
     def __init__(self, parent=None):
         """Initialize the Plotly web view."""
         super().__init__(parent)
+        self.logger = get_module_logger("PlotlyWebView")
         self._temp_file = None
         self.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding)
         self.setMinimumHeight(400)
+        
+        # Create layout
+        self.layout = QVBoxLayout(self)
+        self.layout.setContentsMargins(0, 0, 0, 0)
+        
+        # Only create web view if WebEngine is available
+        if webengine_available:
+            try:
+                self.web_view = QWebEngineView()
+                self.layout.addWidget(self.web_view)
+                self.logger.info("QWebEngineView initialized successfully")
+            except Exception as e:
+                self.logger.error(f"Error initializing QWebEngineView: {str(e)}", exc_info=True)
+                self._create_fallback_view()
+        else:
+            self.logger.warning("PyQt6-WebEngine not available, using fallback view")
+            self._create_fallback_view()
+    
+    def _create_fallback_view(self):
+        """Create a fallback view when WebEngine is not available."""
+        self.web_view = None
+        
+        # Add fallback label
+        self.fallback_label = QLabel("Interactive Plotly visualizations require PyQt6-WebEngine.")
+        self.fallback_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self.fallback_label.setStyleSheet("color: #888; font-size: 14pt;")
+        
+        self.layout.addWidget(self.fallback_label)
     
     def set_figure(self, fig):
         """
@@ -40,31 +77,55 @@ class PlotlyWebView(QWebEngineView):
         Args:
             fig: Plotly figure
         """
-        # Clean up previous temp file
-        if self._temp_file:
-            try:
-                os.unlink(self._temp_file.name)
-                self._temp_file.close()
-            except:
-                pass
-        
-        # Create new temp file
-        self._temp_file = tempfile.NamedTemporaryFile(suffix='.html', delete=False)
-        
-        # Configure HTML output
-        config = {
-            'displayModeBar': True,
-            'responsive': True,
-            'scrollZoom': True
-        }
-        
-        # Write figure to HTML file
-        html = pio.to_html(fig, config=config, include_plotlyjs='cdn', full_html=True)
-        self._temp_file.write(html.encode('utf-8'))
-        self._temp_file.flush()
-        
-        # Load HTML file
-        self.load(QUrl.fromLocalFile(self._temp_file.name))
+        try:
+            # Clean up previous temp file
+            if self._temp_file:
+                try:
+                    os.unlink(self._temp_file.name)
+                    self._temp_file.close()
+                except:
+                    pass
+            
+            # If web view is not available, show error and return
+            if not self.web_view:
+                self.logger.warning("Cannot display Plotly figure: WebEngine not available")
+                return
+            
+            # Create new temp file
+            self._temp_file = tempfile.NamedTemporaryFile(suffix='.html', delete=False)
+            
+            # Configure HTML output
+            config = {
+                'displayModeBar': True,
+                'responsive': True,
+                'scrollZoom': True
+            }
+            
+            # Write figure to HTML file
+            html = pio.to_html(fig, config=config, include_plotlyjs='cdn', full_html=True)
+            self._temp_file.write(html.encode('utf-8'))
+            self._temp_file.flush()
+            
+            # Load HTML file
+            url = QUrl.fromLocalFile(self._temp_file.name)
+            self.web_view.load(url)
+            
+            self.logger.info(f"Plotly figure loaded from {self._temp_file.name}")
+        except Exception as e:
+            self.logger.error(f"Error setting Plotly figure: {str(e)}", exc_info=True)
+            
+            # Show error message instead of crashing
+            if self.web_view:
+                error_html = f"""
+                <html>
+                <body style="background-color: #1e1e1e; color: white; font-family: Arial, sans-serif; padding: 20px;">
+                    <h3>Error displaying visualization</h3>
+                    <p>{str(e)}</p>
+                    <pre>{traceback.format_exc()}</pre>
+                </body>
+                </html>
+                """
+                self.web_view.setHtml(error_html)
     
     def save_as_image(self, file_path: str) -> bool:
         """
@@ -76,33 +137,42 @@ class PlotlyWebView(QWebEngineView):
         Returns:
             True if successful, False otherwise
         """
-        # Use JavaScript to trigger image download
-        self.page().runJavaScript("""
-            (function() {
-                if (window.Plotly) {
-                    var graphDiv = document.getElementsByClassName('plotly-graph-div')[0];
-                    if (graphDiv) {
-                        Plotly.downloadImage(graphDiv, {
-                            format: 'png',
-                            filename: 'visualization',
-                            width: 1200,
-                            height: 800
-                        });
-                        return true;
-                    }
-                }
-                return false;
-            })();
-        """)
+        if not self.web_view:
+            self.logger.warning("Cannot save image: WebEngine not available")
+            return False
         
-        # Note: This approach doesn't actually save to the specified file_path
-        # It triggers a browser download instead
-        # To achieve specified path, a more complex approach would be needed
-        return True
+        try:
+            # Use JavaScript to trigger image download
+            self.web_view.page().runJavaScript("""
+                (function() {
+                    if (window.Plotly) {
+                        var graphDiv = document.getElementsByClassName('plotly-graph-div')[0];
+                        if (graphDiv) {
+                            Plotly.downloadImage(graphDiv, {
+                                format: 'png',
+                                filename: 'visualization',
+                                width: 1200,
+                                height: 800
+                            });
+                            return true;
+                        }
+                    }
+                    return false;
+                })();
+            """)
+            
+            # Note: This approach doesn't actually save to the specified file_path
+            # It triggers a browser download instead
+            # To achieve specified path, a more complex approach would be needed
+            return True
+        except Exception as e:
+            self.logger.error(f"Error saving image: {str(e)}", exc_info=True)
+            return False
     
     def clear(self):
         """Clear the current chart."""
-        self.setHtml("")
+        if self.web_view:
+            self.web_view.setHtml("")
         
         # Clean up temp file
         if self._temp_file:
@@ -299,6 +369,17 @@ class ChartViewWidget(QWidget):
             self.show_placeholder(f"Error: {str(e)}")
             self.engine_type = None
             self.current_figure = None
+            
+            # Show error message box
+            error_msg = f"Error displaying visualization:\n{str(e)}\n\n"
+            error_msg += "Please make sure you have PyQt6-WebEngine installed:\n"
+            error_msg += "pip install PyQt6-WebEngine"
+            
+            QMessageBox.critical(
+                self,
+                "Visualization Error",
+                error_msg
+            )
     
     def has_figure(self) -> bool:
         """
