@@ -131,6 +131,32 @@ class MainWindow(QMainWindow):
         
         self.file_menu.addSeparator()
         
+        # File Aggregation submenu
+        self.aggregation_menu = self.file_menu.addMenu("File &Aggregation")
+        
+        # Enable Aggregation action
+        self.enable_aggregation_action = QAction("&Enable File Aggregation", self)
+        self.enable_aggregation_action.setCheckable(True)
+        self.enable_aggregation_action.setChecked(self.app_controller.settings.enable_file_aggregation)
+        self.enable_aggregation_action.triggered.connect(self.on_toggle_aggregation)
+        self.aggregation_menu.addAction(self.enable_aggregation_action)
+        
+        # Show Single File Groups action
+        self.single_file_groups_action = QAction("Show &Single File Groups", self)
+        self.single_file_groups_action.setCheckable(True)
+        self.single_file_groups_action.setChecked(self.app_controller.settings.show_single_file_groups)
+        self.single_file_groups_action.triggered.connect(self.on_toggle_single_file_groups)
+        self.aggregation_menu.addAction(self.single_file_groups_action)
+        
+        # Add File Metadata Columns action
+        self.add_metadata_columns_action = QAction("Add File &Metadata Columns", self)
+        self.add_metadata_columns_action.setCheckable(True)
+        self.add_metadata_columns_action.setChecked(self.app_controller.settings.add_file_metadata_columns)
+        self.add_metadata_columns_action.triggered.connect(self.on_toggle_metadata_columns)
+        self.aggregation_menu.addAction(self.add_metadata_columns_action)
+        
+        self.file_menu.addSeparator()
+        
         # Export submenu
         self.export_menu = self.file_menu.addMenu("&Export")
         
@@ -260,6 +286,17 @@ class MainWindow(QMainWindow):
         self.refresh_button = QPushButton("Refresh")
         self.refresh_button.clicked.connect(self.on_refresh)
         self.toolbar.addWidget(self.refresh_button)
+        
+        # Add file aggregation toggle
+        self.toolbar.addSeparator()
+        self.aggregate_label = QLabel("File Aggregation:")
+        self.toolbar.addWidget(self.aggregate_label)
+        
+        self.aggregate_toggle = QComboBox()
+        self.aggregate_toggle.addItems(["Enabled", "Disabled"])
+        self.aggregate_toggle.setCurrentText("Enabled" if self.app_controller.settings.enable_file_aggregation else "Disabled")
+        self.aggregate_toggle.currentTextChanged.connect(self.on_toolbar_aggregation_changed)
+        self.toolbar.addWidget(self.aggregate_toggle)
     
     def on_file_selected(self, file_info: Dict[str, Any]):
         """
@@ -268,27 +305,29 @@ class MainWindow(QMainWindow):
         Args:
             file_info: File information dictionary
         """
-        self.logger.info(f"File selected: {file_info['name']}")
+        is_group = file_info.get('is_group', False)
+        file_type = "Group" if is_group else "File"
+        self.logger.info(f"{file_type} selected: {file_info.get('name', 'Unknown')}")
         
         try:
             # Update status bar
-            self.status_bar.showMessage(f"Loading: {file_info['name']}")
+            self.status_bar.showMessage(f"Loading: {file_info.get('name', 'Unknown')}")
             
             # Process the file
             self._load_and_visualize_file(file_info)
             
             # Update status bar
-            self.status_bar.showMessage(f"Loaded: {file_info['name']}")
+            self.status_bar.showMessage(f"Loaded: {file_info.get('name', 'Unknown')}")
             
         except Exception as e:
-            self.logger.error(f"Error loading file: {str(e)}", exc_info=True)
-            self.status_bar.showMessage(f"Error loading file: {str(e)}")
+            self.logger.error(f"Error loading {file_type.lower()}: {str(e)}", exc_info=True)
+            self.status_bar.showMessage(f"Error loading {file_type.lower()}: {str(e)}")
             
             # Show error message
             QMessageBox.critical(
                 self,
                 "Error",
-                f"Error loading file: {str(e)}"
+                f"Error loading {file_type.lower()}: {str(e)}"
             )
     
     def on_chart_type_selected(self, chart_type: str):
@@ -377,6 +416,73 @@ class MainWindow(QMainWindow):
             if 'date_range' in current_config and 'days' in current_config['date_range']:
                 days = current_config['date_range']['days']
                 self.time_period_combo.setCurrentText(f"{days} Days")
+    
+    def on_toggle_aggregation(self, enabled: bool):
+        """
+        Handle aggregation toggle from menu.
+        
+        Args:
+            enabled: Whether aggregation is enabled
+        """
+        self.logger.info(f"File aggregation toggled: {enabled}")
+        
+        # Update settings
+        self.app_controller.settings.enable_file_aggregation = enabled
+        self.app_controller.settings.save_settings()
+        
+        # Update toolbar combo
+        self.aggregate_toggle.setCurrentText("Enabled" if enabled else "Disabled")
+        
+        # Refresh file browser
+        self.file_browser.refresh_directory()
+    
+    def on_toolbar_aggregation_changed(self, state: str):
+        """
+        Handle aggregation toggle from toolbar.
+        
+        Args:
+            state: "Enabled" or "Disabled"
+        """
+        enabled = (state == "Enabled")
+        
+        # Update menu action
+        self.enable_aggregation_action.setChecked(enabled)
+        
+        # Call the main handler
+        self.on_toggle_aggregation(enabled)
+    
+    def on_toggle_single_file_groups(self, enabled: bool):
+        """
+        Handle single file groups toggle.
+        
+        Args:
+            enabled: Whether to show single file groups
+        """
+        self.logger.info(f"Show single file groups toggled: {enabled}")
+        
+        # Update settings
+        self.app_controller.settings.show_single_file_groups = enabled
+        self.app_controller.settings.save_settings()
+        
+        # Refresh file browser
+        self.file_browser.refresh_directory()
+    
+    def on_toggle_metadata_columns(self, enabled: bool):
+        """
+        Handle metadata columns toggle.
+        
+        Args:
+            enabled: Whether to add file metadata columns
+        """
+        self.logger.info(f"Add file metadata columns toggled: {enabled}")
+        
+        # Update settings
+        self.app_controller.settings.add_file_metadata_columns = enabled
+        self.app_controller.settings.save_settings()
+        
+        # Refresh visualization if a file is loaded
+        if self.file_browser.get_selected_file_info():
+            self.on_refresh()
     
     def on_settings_changed(self):
         """Handle settings changes from control panel."""
@@ -504,7 +610,7 @@ class MainWindow(QMainWindow):
         
         # Get initial directory
         initial_dir = os.path.expanduser("~")
-        initial_name = os.path.splitext(file_info['name'])[0] + "_processed.csv"
+        initial_name = os.path.splitext(file_info.get('name', 'export'))[0] + "_processed.csv"
         
         # Show save dialog
         file_path, _ = QFileDialog.getSaveFileName(
@@ -520,8 +626,15 @@ class MainWindow(QMainWindow):
         self.logger.info(f"Exporting to: {file_path}")
         
         try:
-            # Load data
-            df = self.app_controller.data_manager.load_csv(file_info['path'])
+            # Check if it's a file group
+            is_group = file_info.get('is_group', False)
+            
+            if is_group:
+                # Load combined data
+                df = self.app_controller.data_manager.load_combined_data(file_info)
+            else:
+                # Load individual file
+                df = self.app_controller.data_manager.load_csv(file_info['path'])
             
             # Get current configuration
             config = self.control_panel.get_config()
@@ -553,29 +666,30 @@ class MainWindow(QMainWindow):
     
     def _load_and_visualize_file(self, file_info: Dict[str, Any]):
         """
-        Load and visualize a file.
+        Load and visualize a file or file group.
         
         Args:
-            file_info: File information dictionary
+            file_info: File or group information dictionary
         """
         try:
             # Get configuration from control panel
             config = self.control_panel.get_config()
             
             # Set title (if not already set)
-            if 'title' not in config and 'metric' in file_info:
-                config['title'] = file_info['metric']
-            elif 'title' not in config and 'display_name' in file_info:
-                config['title'] = file_info['display_name']
+            if 'title' not in config:
+                if 'metric' in file_info:
+                    config['title'] = file_info['metric']
+                elif 'display_name' in file_info:
+                    config['title'] = file_info['display_name']
             
             # Create visualization
-            fig = self.app_controller.create_visualization(file_info['path'], config)
+            fig = self.app_controller.create_visualization(file_info, config)
             
             # Display visualization
             self.chart_view.set_figure(fig)
             
             # Calculate metrics
-            metrics = self.app_controller.calculate_metrics(file_info['path'], config)
+            metrics = self.app_controller.calculate_metrics(file_info, config)
             
             # Update info panel
             self.info_panel.update_metrics(metrics)
