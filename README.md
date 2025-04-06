@@ -9,6 +9,7 @@ A powerful Python-based application for visualizing time-series CSV data with Py
 - **Interactive Visualization** of time-series CSV data
 - **Multiple Chart Types**: Line, Bar, Pie, and Diverging Bar charts
 - **Time Period Selection** with predefined periods and custom date ranges
+- **Multi-File Aggregation** for combining related data across files
 - **Data Filtering** by series or categories
 - **Efficient Handling** of large datasets
 - **Dark Theme UI** for better visualization experience
@@ -83,15 +84,41 @@ Example directory structure:
     ...
 ```
 
+## 🔄 Multi-File Aggregation
+
+The application can automatically combine data from multiple CSV files that contain the same metric but cover different time periods:
+
+### How It Works
+
+1. **File Detection**: Files with the same metric name (e.g., "Session time- SessionDurationSeconds") are identified and grouped together
+2. **Chronological Merging**: Data from all files in a group is combined into a continuous timeline
+3. **Duplicate Handling**: Overlapping data points are resolved using the configured strategy (last, first, or average)
+4. **Unified Visualization**: All data is displayed in a single chart showing the complete timeline
+
+### Using the Feature
+
+- **Enable/Disable**: Toggle File Aggregation in the toolbar or File → File Aggregation menu
+- **Configure Options**: Access advanced settings via Settings dialog:
+  - **Show Single File Groups**: Include metrics with only one file
+  - **Add File Metadata Columns**: Add source file information to the combined dataset
+  - **Duplicate Handling Strategy**: Choose how to resolve duplicate data points
+
+### Viewing Aggregated Data
+
+- File groups appear in blue with a count of included files
+- Click on a file group to visualize the combined dataset
+- The File Info tab in the metrics panel shows details about the combined files
+
 ## 🧰 Project Structure
 
 ```
 /csv_visualizer
     /core - Core application components
     /data - Data loading and processing
+        /file_aggregator.py - Multi-file aggregation implementation
     /ui - User interface components
         /widgets - Custom UI widgets
-        /dialogs - Dialog windows
+        /dialogs - Dialog windows including settings
     /visualization - Visualization engines
     /utils - Utility functions
 ```
