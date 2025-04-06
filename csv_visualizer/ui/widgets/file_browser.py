@@ -10,11 +10,12 @@ from typing import Dict, List, Any, Optional
 
 from PyQt6.QtWidgets import (QWidget, QVBoxLayout, QTreeView, QHeaderView, 
                           QLabel, QLineEdit, QPushButton, QAbstractItemView, 
-                          QHBoxLayout, QComboBox, QSizePolicy, QMenu)
+                          QHBoxLayout, QComboBox, QSizePolicy, QMenu,
+                          QCheckBox)
 from PyQt6.QtCore import (Qt, QModelIndex, QDir, QSortFilterProxyModel, 
                        pyqtSignal, pyqtSlot)
 from PyQt6.QtGui import (QIcon, QAction, QKeySequence, QStandardItem, 
-                      QStandardItemModel)
+                      QStandardItemModel, QBrush, QColor, QFont)
 
 from csv_visualizer.utils.logging_utils import get_module_logger
 from csv_visualizer.data.file_scanner import FileScanner
@@ -30,6 +31,7 @@ class FileTreeModel(QStandardItemModel):
         
         # Dictionary to store file info by path
         self._file_info_map = {}
+        self._group_info_map = {}
     
     def add_files(self, files: List[Dict[str, Any]]):
         """
@@ -42,47 +44,112 @@ class FileTreeModel(QStandardItemModel):
         self.clear()
         self.setHorizontalHeaderLabels(["Name"])
         
-        # Clear file info map
+        # Clear file info maps
         self._file_info_map = {}
+        self._group_info_map = {}
         
         # Create week folders
         week_folders = {}
+        file_groups = {}
         
+        # First pass: identify metrics and groups
+        for file_info in files:
+            # Check if this is a group
+            is_group = file_info.get('is_group', False)
+            
+            if is_group:
+                metric = file_info.get('metric', 'Unknown')
+                self._group_info_map[metric] = file_info
+                file_groups[metric] = file_info
+        
+        # Second pass: add files and groups to the model
         for file_info in files:
             # Get path components
-            path = file_info['path']
-            dir_path = os.path.dirname(path)
-            file_name = file_info['name']
+            path = file_info.get('path', '')
+            file_name = file_info.get('name', '')
             
             # Create display name
             display_name = file_info.get('display_name', file_name)
             
-            # Store file info in map
-            self._file_info_map[path] = file_info
+            # Check if this is a file group
+            is_group = file_info.get('is_group', False)
             
-            # Check if file is in a week folder
-            week_number = file_info.get('week_number')
+            if is_group:
+                # Add file group
+                metric = file_info.get('metric', 'Unknown')
+                file_count = file_info.get('file_count', 0)
+                
+                # Create group item with custom styling
+                group_item = QStandardItem(f"{display_name} ({file_count} files)")
+                group_item.setData(metric, Qt.ItemDataRole.UserRole)
+                group_item.setData("group", Qt.ItemDataRole.UserRole + 1)
+                
+                # Set bold font
+                font = QFont()
+                font.setBold(True)
+                group_item.setFont(font)
+                
+                # Set blue color
+                group_item.setForeground(QBrush(QColor("#0078d4")))
+                
+                self.appendRow(group_item)
+                
+                # Add child files to group
+                child_files = file_info.get('files', [])
+                for child_file in child_files:
+                    child_path = child_file.get('path', '')
+                    child_name = child_file.get('display_name', child_file.get('name', ''))
+                    
+                    # Create child item
+                    child_item = QStandardItem(child_name)
+                    child_item.setData(child_path, Qt.ItemDataRole.UserRole)
+                    child_item.setData("file", Qt.ItemDataRole.UserRole + 1)
+                    
+                    # Store file info in map
+                    self._file_info_map[child_path] = child_file
+                    
+                    # Add to group
+                    group_item.appendRow(child_item)
             
-            if week_number is not None:
-                # Create week folder if not exists
-                if week_number not in week_folders:
-                    folder_item = QStandardItem(f"Week {week_number}")
-                    folder_item.setData("folder", Qt.ItemDataRole.UserRole)
-                    self.appendRow(folder_item)
-                    week_folders[week_number] = folder_item
+            elif path:  # Regular file
+                # Check if this file is part of a group
+                is_in_group = False
+                if 'metric' in file_info:
+                    metric = file_info['metric']
+                    if metric in file_groups:
+                        # Skip this file as it will be shown under its group
+                        is_in_group = True
                 
-                # Add file to week folder
-                folder_item = week_folders[week_number]
+                if not is_in_group:
+                    # Check if file is in a week folder
+                    week_number = file_info.get('week_number')
+                    
+                    if week_number is not None:
+                        # Create week folder if not exists
+                        if week_number not in week_folders:
+                            folder_item = QStandardItem(f"Week {week_number}")
+                            folder_item.setData("folder", Qt.ItemDataRole.UserRole + 1)
+                            self.appendRow(folder_item)
+                            week_folders[week_number] = folder_item
+                        
+                        # Add file to week folder
+                        folder_item = week_folders[week_number]
+                        
+                        file_item = QStandardItem(display_name)
+                        file_item.setData(path, Qt.ItemDataRole.UserRole)
+                        file_item.setData("file", Qt.ItemDataRole.UserRole + 1)
+                        folder_item.appendRow(file_item)
+                        
+                    else:
+                        # Add file directly to root
+                        file_item = QStandardItem(display_name)
+                        file_item.setData(path, Qt.ItemDataRole.UserRole)
+                        file_item.setData("file", Qt.ItemDataRole.UserRole + 1)
+                        self.appendRow(file_item)
                 
-                file_item = QStandardItem(display_name)
-                file_item.setData(path, Qt.ItemDataRole.UserRole)
-                folder_item.appendRow(file_item)
-                
-            else:
-                # Add file directly to root
-                file_item = QStandardItem(display_name)
-                file_item.setData(path, Qt.ItemDataRole.UserRole)
-                self.appendRow(file_item)
+                # Store file info in map
+                if path:
+                    self._file_info_map[path] = file_info
     
     def get_file_info(self, index: QModelIndex) -> Optional[Dict[str, Any]]:
         """
@@ -97,16 +164,22 @@ class FileTreeModel(QStandardItemModel):
         if not index.isValid():
             return None
         
-        # Get path from model data
+        # Get path and item type from model data
         item = self.itemFromIndex(index)
         path = item.data(Qt.ItemDataRole.UserRole)
+        item_type = item.data(Qt.ItemDataRole.UserRole + 1)
         
-        # Check if it's a folder
-        if path == "folder":
+        # Check if it's a folder or group
+        if item_type == "folder":
             return None
+        elif item_type == "group":
+            # Return group info
+            return self._group_info_map.get(path)
+        elif item_type == "file":
+            # Return file info
+            return self._file_info_map.get(path)
         
-        # Return file info from map
-        return self._file_info_map.get(path)
+        return None
 
 
 class FileTreeFilterProxyModel(QSortFilterProxyModel):
@@ -136,8 +209,11 @@ class FileTreeFilterProxyModel(QSortFilterProxyModel):
         index = source_model.index(source_row, 0, source_parent)
         item = source_model.itemFromIndex(index)
         
-        # Always show folders
-        if item.data(Qt.ItemDataRole.UserRole) == "folder":
+        # Get item type
+        item_type = item.data(Qt.ItemDataRole.UserRole + 1)
+        
+        # Always show folders and groups
+        if item_type == "folder" or item_type == "group":
             # Check if any child matches
             child_count = item.rowCount()
             for i in range(child_count):
@@ -145,7 +221,7 @@ class FileTreeFilterProxyModel(QSortFilterProxyModel):
                 if self.filterAcceptsRow(i, index):
                     return True
             
-            # If no filter, show empty folders too
+            # If no filter, show empty folders/groups too
             return not self.filterRegularExpression().pattern()
         
         # Check if item text matches filter
@@ -204,6 +280,24 @@ class FileBrowserWidget(QWidget):
         self.filter_layout.addWidget(self.filter_label)
         self.filter_layout.addWidget(self.filter_edit)
         
+        # Create options widget
+        self.options_widget = QWidget()
+        self.options_layout = QHBoxLayout(self.options_widget)
+        self.options_layout.setContentsMargins(6, 0, 6, 6)
+        
+        # Add aggregation toggle checkbox
+        self.aggregate_checkbox = QCheckBox("Group Related Files")
+        self.aggregate_checkbox.setChecked(self.app_controller.settings.enable_file_aggregation)
+        self.aggregate_checkbox.toggled.connect(self._toggle_aggregation)
+        
+        self.options_layout.addWidget(self.aggregate_checkbox)
+        self.options_layout.addStretch()
+        
+        # Add refresh button
+        self.refresh_button = QPushButton("Refresh")
+        self.refresh_button.clicked.connect(self.refresh_directory)
+        self.options_layout.addWidget(self.refresh_button)
+        
         # Create tree model
         self.file_model = FileTreeModel(self)
         
@@ -231,6 +325,7 @@ class FileBrowserWidget(QWidget):
         
         # Add widgets to layout
         self.layout.addWidget(self.filter_widget)
+        self.layout.addWidget(self.options_widget)
         self.layout.addWidget(self.tree_view)
         
         # Set minimum width
@@ -270,6 +365,22 @@ class FileBrowserWidget(QWidget):
         """
         return self.selected_file_info
     
+    def _toggle_aggregation(self, enabled: bool):
+        """
+        Toggle file aggregation feature.
+        
+        Args:
+            enabled: Whether aggregation is enabled
+        """
+        self.logger.info(f"File aggregation toggled: {enabled}")
+        
+        # Update settings
+        self.app_controller.settings.enable_file_aggregation = enabled
+        self.app_controller.settings.save_settings()
+        
+        # Refresh directory
+        self.refresh_directory()
+    
     def _filter_changed(self, text: str):
         """
         Handle filter text change.
@@ -297,7 +408,7 @@ class FileBrowserWidget(QWidget):
         file_info = self.file_model.get_file_info(source_index)
         
         if file_info:
-            self.logger.info(f"File selected: {file_info['name']}")
+            self.logger.info(f"{'Group' if file_info.get('is_group', False) else 'File'} selected: {file_info.get('name', 'Unknown')}")
             self.selected_file_info = file_info
     
     def _item_double_clicked(self, index: QModelIndex):
@@ -314,7 +425,8 @@ class FileBrowserWidget(QWidget):
         file_info = self.file_model.get_file_info(source_index)
         
         if file_info:
-            self.logger.info(f"File double-clicked: {file_info['name']}")
+            is_group = file_info.get('is_group', False)
+            self.logger.info(f"{'Group' if is_group else 'File'} double-clicked: {file_info.get('name', 'Unknown')}")
             self.selected_file_info = file_info
             
             # Emit signal
@@ -346,6 +458,18 @@ class FileBrowserWidget(QWidget):
                 open_action.triggered.connect(lambda: self._open_file(file_info))
                 menu.addAction(open_action)
                 
+                # Add additional actions for file groups
+                if file_info.get('is_group', False):
+                    # Add action to expand/collapse group
+                    if self.tree_view.isExpanded(index):
+                        collapse_action = QAction("Collapse Group", self)
+                        collapse_action.triggered.connect(lambda: self.tree_view.collapse(index))
+                        menu.addAction(collapse_action)
+                    else:
+                        expand_action = QAction("Expand Group", self)
+                        expand_action.triggered.connect(lambda: self.tree_view.expand(index))
+                        menu.addAction(expand_action)
+                
                 # Show menu
                 menu.exec(self.tree_view.viewport().mapToGlobal(position))
     
@@ -356,7 +480,8 @@ class FileBrowserWidget(QWidget):
         Args:
             file_info: File information dictionary
         """
-        self.logger.info(f"Opening file: {file_info['name']}")
+        is_group = file_info.get('is_group', False)
+        self.logger.info(f"Opening {'group' if is_group else 'file'}: {file_info.get('name', 'Unknown')}")
         self.selected_file_info = file_info
         
         # Emit signal
