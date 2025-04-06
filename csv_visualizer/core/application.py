@@ -267,6 +267,21 @@ class Application:
                 padding: 4px;
                 border: 1px solid #3d3d3d;
             }
+            
+            /* File group items styling */
+            QTreeView::item:has-children {
+                color: #0078d4;
+                font-weight: bold;
+            }
+            
+            /* Tag labels styling */
+            QLabel[tag="true"] {
+                background-color: #0078d4;
+                color: white;
+                border-radius: 4px;
+                padding: 2px 4px;
+                margin: 2px;
+            }
         """)
     
     def _parse_arguments(self, argv: List[str]) -> None:
@@ -331,20 +346,29 @@ class Application:
         self.logger.error(f"Error: {title} - {message}")
         self._show_error_dialog(title, message)
     
-    def create_visualization(self, file_path: str, config: Dict[str, Any]) -> Any:
+    def create_visualization(self, file_info: Dict[str, Any], config: Dict[str, Any]) -> Any:
         """
-        Create a visualization for a CSV file.
+        Create a visualization for a CSV file or grouped files.
 
         Args:
-            file_path: Path to CSV file
+            file_info: File or group information dictionary
             config: Visualization configuration
 
         Returns:
             Plotly figure object
         """
         try:
-            # Load data
-            df = self.data_manager.load_csv(file_path)
+            # Check if this is a file group or an individual file
+            is_group = file_info.get('is_group', False)
+            
+            if is_group:
+                self.logger.info(f"Creating visualization for file group: {file_info.get('metric', 'Unknown')}")
+                # Load combined data from file group
+                df = self.data_manager.load_combined_data(file_info)
+            else:
+                # Load data from individual file
+                self.logger.info(f"Creating visualization for file: {file_info.get('name', 'Unknown')}")
+                df = self.data_manager.load_csv(file_info['path'])
             
             # Create visualization
             return self.viz_manager.create_visualization(df, config)
@@ -352,20 +376,29 @@ class Application:
             self.logger.error(f"Error creating visualization: {str(e)}", exc_info=True)
             raise
     
-    def calculate_metrics(self, file_path: str, config: Dict[str, Any]) -> Dict[str, Any]:
+    def calculate_metrics(self, file_info: Dict[str, Any], config: Dict[str, Any]) -> Dict[str, Any]:
         """
-        Calculate metrics for a CSV file.
+        Calculate metrics for a CSV file or grouped files.
 
         Args:
-            file_path: Path to CSV file
+            file_info: File or group information dictionary
             config: Configuration
 
         Returns:
             Dictionary of metrics
         """
         try:
-            # Load data
-            df = self.data_manager.load_csv(file_path)
+            # Check if this is a file group or an individual file
+            is_group = file_info.get('is_group', False)
+            
+            if is_group:
+                self.logger.info(f"Calculating metrics for file group: {file_info.get('metric', 'Unknown')}")
+                # Load combined data from file group
+                df = self.data_manager.load_combined_data(file_info)
+            else:
+                # Load data from individual file
+                self.logger.info(f"Calculating metrics for file: {file_info.get('name', 'Unknown')}")
+                df = self.data_manager.load_csv(file_info['path'])
             
             # Calculate metrics
             return self.viz_manager.calculate_metrics(df, config)
