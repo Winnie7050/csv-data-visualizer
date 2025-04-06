@@ -114,6 +114,136 @@ class DataManager:
             self.logger.error(f"Error loading CSV file: {str(e)}", exc_info=True)
             raise
     
+    def load_combined_data(self, file_path: str, combine_similar: bool = True) -> pd.DataFrame:
+        """
+        Load a CSV file and optionally combine data from similar files.
+
+        Args:
+            file_path: Path to primary CSV file
+            combine_similar: Whether to combine data from similar files
+
+        Returns:
+            Pandas DataFrame with combined data
+        """
+        self.logger.info(f"Loading {'combined' if combine_similar else 'single'} data from: {file_path}")
+        
+        # If not combining, just load the single file
+        if not combine_similar:
+            return self.load_csv(file_path)
+        
+        try:
+            # Generate a cache key for the combined data
+            base_name = self._extract_metric_name(os.path.basename(file_path))
+            directory = os.path.dirname(file_path)
+            combined_cache_key = f"combined_{directory}_{base_name}"
+            cache_key = hashlib.md5(combined_cache_key.encode()).hexdigest()
+            
+            # Check cache first
+            if cache_key in self._data_cache:
+                self.logger.info("Using cached combined data")
+                self._data_cache[cache_key]["access_count"] = self._cache_access_count
+                self._cache_access_count += 1
+                return self._data_cache[cache_key]["data"].copy()
+            
+            # Get all files in the directory
+            all_files = self.scan_directory(directory)
+            
+            # Find files with the same metric
+            similar_files = []
+            for file_info in all_files:
+                file_metric = self._extract_metric_name(file_info['name'])
+                if file_metric == base_name:
+                    similar_files.append(file_info['path'])
+            
+            self.logger.info(f"Found {len(similar_files)} files with similar metrics")
+            
+            if not similar_files:
+                # If no similar files found, just load the original file
+                return self.load_csv(file_path)
+            
+            # Load and combine all similar files
+            combined_df = self._load_and_combine_files(similar_files)
+            
+            # Cache the combined data
+            self._cache_data(cache_key, combined_df)
+            
+            self.logger.info(f"Successfully combined data with {len(combined_df)} rows")
+            return combined_df
+            
+        except Exception as e:
+            self.logger.error(f"Error combining data: {str(e)}", exc_info=True)
+            # Fall back to loading just the single file
+            self.logger.info("Falling back to loading single file")
+            return self.load_csv(file_path)
+    
+    def _load_and_combine_files(self, file_paths: List[str]) -> pd.DataFrame:
+        """
+        Load multiple CSV files and combine them, removing duplicates.
+
+        Args:
+            file_paths: List of file paths to load and combine
+
+        Returns:
+            Combined Pandas DataFrame
+        """
+        dataframes = []
+        
+        for file_path in file_paths:
+            try:
+                df = self.load_csv(file_path)
+                dataframes.append(df)
+            except Exception as e:
+                self.logger.warning(f"Error loading file {file_path}: {str(e)}")
+        
+        if not dataframes:
+            raise ValueError("No data could be loaded from any of the files")
+        
+        # Combine all dataframes
+        combined_df = pd.concat(dataframes, ignore_index=True)
+        
+        # Find date column
+        date_col = self._find_date_column(combined_df)
+        
+        if date_col:
+            # Sort by date
+            combined_df = combined_df.sort_values(date_col)
+            
+            # Remove duplicates based on date and any breakdown column
+            if 'Breakdown' in combined_df.columns:
+                combined_df = combined_df.drop_duplicates(subset=[date_col, 'Breakdown'], keep='last')
+            else:
+                combined_df = combined_df.drop_duplicates(subset=[date_col], keep='last')
+        
+        return combined_df
+    
+    def _extract_metric_name(self, filename: str) -> str:
+        """
+        Extract the metric name from a filename.
+
+        Args:
+            filename: Name of the file
+
+        Returns:
+            Extracted metric name
+        """
+        # Remove any date/time patterns from the filename
+        # Example: "Session time- SessionDurationSeconds, 2025-03-22T08-30-00.000Z.csv"
+        # should become "Session time- SessionDurationSeconds"
+        
+        # Match patterns like dates, times, and timestamps
+        date_pattern = r', \d{4}-\d{2}-\d{2}.*?\.csv'
+        
+        # Remove the date part
+        metric_name = re.sub(date_pattern, '', filename)
+        
+        # Remove any other common suffixes
+        metric_name = re.sub(r' to \d{4}.*?\.csv', '', metric_name)
+        
+        # Remove file extension if it's still there
+        metric_name = re.sub(r'\.csv$', '', metric_name)
+        
+        return metric_name.strip()
+    
     def aggregate_time_series(
         self, df: pd.DataFrame, date_col: str, value_cols: List[str], 
         breakdown_col: Optional[str] = None, period: str = 'D'
@@ -397,7 +527,12 @@ class DataManager:
         Returns:
             Name of date column or None if not found
         """
-        # First try to find by name
+        # First check if any column is already datetime
+        datetime_cols = df.select_dtypes(include=['datetime64']).columns
+        if len(datetime_cols) > 0:
+            return datetime_cols[0]
+            
+        # Then try to find by name
         for col in df.columns:
             if 'date' in col.lower() or 'time' in col.lower():
                 return col
