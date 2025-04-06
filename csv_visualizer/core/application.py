@@ -10,8 +10,12 @@ from typing import List, Optional, Dict, Any, Tuple
 
 from PyQt6.QtWidgets import QApplication, QMessageBox
 from PyQt6.QtCore import Qt
-from PyQt6.QtWebEngineCore import QWebEngineSettings
-from PyQt6.QtWebEngineWidgets import QWebEngineView
+try:
+    from PyQt6.QtWebEngineCore import QWebEngineSettings
+    from PyQt6.QtWebEngineWidgets import QWebEngineView
+    has_webengine = True
+except ImportError:
+    has_webengine = False
 
 from csv_visualizer.ui.main_window import MainWindow
 from csv_visualizer.data.data_manager import DataManager
@@ -35,31 +39,34 @@ class Application:
         # Settings
         self.settings = Settings()
         
-        # Qt application - Make sure to pass sys.argv
-        self.qt_app = QApplication(sys.argv)
+        # Filter command line args to remove visualization-specific flags
+        filtered_args = [arg for arg in sys.argv if not arg.startswith('--')]
+        
+        # Qt application - Make sure to pass filtered args
+        self.qt_app = QApplication(filtered_args)
         self.qt_app.setApplicationName("CSV Data Visualizer")
         self.qt_app.setApplicationVersion(self.settings.version)
         self.qt_app.setOrganizationName("MCP")
         
-        # Initialize QWebEngine before configuring settings
-        # This ensures QWebEngine is properly initialized with command line args
-        try:
-            dummy_web_view = QWebEngineView()  # Create a dummy view to initialize QWebEngine
-            self.logger.info("QWebEngineView successfully initialized")
-            
-            # Try to configure WebEngine settings - handle API differences
+        # Initialize QWebEngine if available
+        if has_webengine:
             try:
-                # Try the globalSettings method (which is used in newer versions of PyQt)
-                webengine_settings = QWebEngineSettings.globalSettings()
-                webengine_settings.setAttribute(QWebEngineSettings.WebAttribute.JavascriptEnabled, True)
-                webengine_settings.setAttribute(QWebEngineSettings.WebAttribute.LocalContentCanAccessRemoteUrls, True)
-                webengine_settings.setAttribute(QWebEngineSettings.WebAttribute.ScrollAnimatorEnabled, True)
-                self.logger.info("WebEngine settings configured using globalSettings()")
-            except Exception as settings_error:
-                self.logger.warning(f"Could not configure WebEngine settings: {str(settings_error)}")
-                # We'll continue without setting WebEngine settings
-        except Exception as e:
-            self.logger.warning(f"Error initializing QWebEngineView: {str(e)}. Proceeding with fallback options.")
+                dummy_web_view = QWebEngineView()  # Create a dummy view to initialize QWebEngine
+                self.logger.info("QWebEngineView successfully initialized")
+                
+                # Try to configure WebEngine settings directly on the instance
+                try:
+                    # Set settings directly on the web view instance
+                    dummy_web_view.settings().setAttribute(QWebEngineSettings.WebAttribute.JavascriptEnabled, True)
+                    dummy_web_view.settings().setAttribute(QWebEngineSettings.WebAttribute.LocalContentCanAccessRemoteUrls, True)
+                    dummy_web_view.settings().setAttribute(QWebEngineSettings.WebAttribute.ScrollAnimatorEnabled, True)
+                    self.logger.info("WebEngine settings configured on instance")
+                except Exception as settings_error:
+                    self.logger.warning(f"Could not configure WebEngine settings: {str(settings_error)}")
+            except Exception as e:
+                self.logger.warning(f"Error initializing QWebEngineView: {str(e)}. Proceeding with fallback options.")
+        else:
+            self.logger.warning("PyQt6-WebEngine is not available. Will use Matplotlib for visualizations.")
         
         # Apply dark theme
         self._apply_dark_theme()
@@ -91,8 +98,9 @@ class Application:
         try:
             self.logger.info("Starting application")
             
-            # Parse command line arguments
-            self._parse_arguments(argv)
+            # Parse command line arguments (filtering out flags)
+            filtered_args = [arg for arg in argv if not arg.startswith('--')]
+            self._parse_arguments(filtered_args)
             
             # Create main window
             self.main_window = MainWindow(self)
@@ -271,7 +279,7 @@ class Application:
         # Simple argument parsing for now
         if len(argv) > 1:
             data_path = argv[1]
-            if data_path:
+            if data_path and not data_path.startswith('--'):
                 self.settings.data_directory = data_path
                 self.logger.info(f"Data directory set to {data_path}")
     
