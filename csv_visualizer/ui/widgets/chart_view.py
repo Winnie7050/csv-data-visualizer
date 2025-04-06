@@ -12,7 +12,12 @@ from typing import Dict, List, Any, Optional, Union
 from PyQt6.QtWidgets import (QWidget, QVBoxLayout, QHBoxLayout, QLabel, 
                           QSizePolicy, QFrame, QSpacerItem)
 from PyQt6.QtCore import Qt, QUrl, pyqtSignal, pyqtSlot
-from PyQt6.QtWebEngineWidgets import QWebEngineView
+try:
+    from PyQt6.QtWebEngineWidgets import QWebEngineView
+    has_webengine = True
+except ImportError:
+    has_webengine = False
+
 from PyQt6.QtGui import QImage, QPainter, QPixmap
 
 import plotly.io as pio
@@ -23,15 +28,43 @@ from matplotlib.figure import Figure
 from csv_visualizer.utils.logging_utils import get_module_logger
 
 
-class PlotlyWebView(QWebEngineView):
+class PlotlyWebView(QWidget):
     """Plotly Web View for displaying Plotly visualizations."""
     
     def __init__(self, parent=None):
         """Initialize the Plotly web view."""
         super().__init__(parent)
+        self.logger = get_module_logger("PlotlyWebView")
         self._temp_file = None
         self.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding)
         self.setMinimumHeight(400)
+        
+        # Create layout
+        self.layout = QVBoxLayout(self)
+        self.layout.setContentsMargins(0, 0, 0, 0)
+        self.layout.setSpacing(0)
+        
+        # Try to create QWebEngineView if available
+        if has_webengine:
+            try:
+                self.web_view = QWebEngineView()
+                self.layout.addWidget(self.web_view)
+                self.logger.info("QWebEngineView created successfully")
+            except Exception as e:
+                self.logger.error(f"Error creating QWebEngineView: {str(e)}")
+                self._create_fallback_widget()
+        else:
+            self.logger.warning("QWebEngineWidgets not available, using fallback")
+            self._create_fallback_widget()
+    
+    def _create_fallback_widget(self):
+        """Create a fallback widget when QWebEngineView is not available."""
+        self.web_view = None
+        # Create a label to show the fallback message
+        self.fallback_label = QLabel("Interactive Plotly visualization not available.\nUsing Matplotlib fallback.")
+        self.fallback_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self.fallback_label.setStyleSheet("color: #aaa; font-size: 14pt;")
+        self.layout.addWidget(self.fallback_label)
     
     def set_figure(self, fig):
         """
@@ -48,25 +81,29 @@ class PlotlyWebView(QWebEngineView):
             except:
                 pass
         
+        # If the web view is not available, raise an exception to fall back to Matplotlib
+        if not has_webengine or not self.web_view:
+            raise Exception("QWebEngineView not available")
+        
         try:
             # Create new temp file
             self._temp_file = tempfile.NamedTemporaryFile(suffix='.html', delete=False)
             
-            # Configure HTML output
+            # Configure HTML output with Plotly included locally
             config = {
                 'displayModeBar': True,
                 'responsive': True,
                 'scrollZoom': True
             }
             
-            # Write figure to HTML file
-            html = pio.to_html(fig, config=config, include_plotlyjs='cdn', full_html=True)
+            # Write figure to HTML file with Plotly.js included (not using CDN)
+            html = pio.to_html(fig, config=config, include_plotlyjs=True, full_html=True)
             self._temp_file.write(html.encode('utf-8'))
             self._temp_file.flush()
             
             # Load HTML file
             try:
-                self.load(QUrl.fromLocalFile(self._temp_file.name))
+                self.web_view.load(QUrl.fromLocalFile(self._temp_file.name))
             except Exception as web_error:
                 # If QWebEngineView fails, raise exception to fall back to matplotlib
                 raise Exception(f"QWebEngineView error: {str(web_error)}")
@@ -108,7 +145,11 @@ class PlotlyWebView(QWebEngineView):
             self._temp_file.write(html.encode('utf-8'))
             self._temp_file.flush()
             try:
-                self.load(QUrl.fromLocalFile(self._temp_file.name))
+                if self.web_view:
+                    self.web_view.load(QUrl.fromLocalFile(self._temp_file.name))
+                else:
+                    # Re-raise to trigger fallback to Matplotlib
+                    raise Exception("Web view not available")
             except Exception:
                 # Bubble up the exception to trigger fallback to Matplotlib
                 raise Exception(f"Error setting Plotly figure: {str(e)}")
@@ -123,8 +164,11 @@ class PlotlyWebView(QWebEngineView):
         Returns:
             True if successful, False otherwise
         """
+        if not has_webengine or not self.web_view:
+            return False
+            
         # Use JavaScript to trigger image download
-        self.page().runJavaScript("""
+        self.web_view.page().runJavaScript("""
             (function() {
                 if (window.Plotly) {
                     var graphDiv = document.getElementsByClassName('plotly-graph-div')[0];
@@ -149,7 +193,8 @@ class PlotlyWebView(QWebEngineView):
     
     def clear(self):
         """Clear the current chart."""
-        self.setHtml("")
+        if has_webengine and self.web_view:
+            self.web_view.setHtml("")
         
         # Clean up temp file
         if self._temp_file:
