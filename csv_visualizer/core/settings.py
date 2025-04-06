@@ -23,6 +23,13 @@ class Settings:
         self.recent_files: List[str] = []
         self.max_recent_files = 10
         
+        # File aggregation settings
+        self.enable_file_aggregation = True
+        self.show_single_file_groups = False
+        self.add_file_metadata_columns = False
+        self.auto_combine_same_metric = True
+        self.duplicate_handling_strategy = "last"  # Options: "last", "first", "average"
+        
         # Visualization settings
         self.default_chart_type = "Line Chart"
         self.default_time_period = 30  # days
@@ -137,6 +144,11 @@ class Settings:
                 "window_height": self.window_height,
                 "splitter_sizes": self.splitter_sizes,
                 "theme": self.theme,
+                "enable_file_aggregation": self.enable_file_aggregation,
+                "show_single_file_groups": self.show_single_file_groups,
+                "add_file_metadata_columns": self.add_file_metadata_columns,
+                "auto_combine_same_metric": self.auto_combine_same_metric,
+                "duplicate_handling_strategy": self.duplicate_handling_strategy,
             }
             
             # Save to file
