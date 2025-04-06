@@ -22,6 +22,7 @@ from csv_visualizer.ui.widgets.control_panel import ControlPanelWidget
 from csv_visualizer.ui.widgets.info_panel import InfoPanelWidget
 from csv_visualizer.ui.dialogs.date_range_dialog import DateRangeDialog
 from csv_visualizer.ui.dialogs.about_dialog import AboutDialog
+from csv_visualizer.ui.dialogs.settings_dialog import SettingsDialog
 
 
 class MainWindow(QMainWindow):
@@ -130,6 +131,12 @@ class MainWindow(QMainWindow):
         self.file_menu.addAction(self.open_dir_action)
         
         self.file_menu.addSeparator()
+        
+        # Settings action
+        self.settings_action = QAction("&Settings...", self)
+        self.settings_action.setShortcut("Ctrl+,")
+        self.settings_action.triggered.connect(self.on_settings)
+        self.file_menu.addAction(self.settings_action)
         
         # File Aggregation submenu
         self.aggregation_menu = self.file_menu.addMenu("File &Aggregation")
@@ -297,6 +304,12 @@ class MainWindow(QMainWindow):
         self.aggregate_toggle.setCurrentText("Enabled" if self.app_controller.settings.enable_file_aggregation else "Disabled")
         self.aggregate_toggle.currentTextChanged.connect(self.on_toolbar_aggregation_changed)
         self.toolbar.addWidget(self.aggregate_toggle)
+        
+        # Add settings button
+        self.toolbar.addSeparator()
+        self.settings_button = QPushButton("Settings")
+        self.settings_button.clicked.connect(self.on_settings)
+        self.toolbar.addWidget(self.settings_button)
     
     def on_file_selected(self, file_info: Dict[str, Any]):
         """
@@ -312,6 +325,9 @@ class MainWindow(QMainWindow):
         try:
             # Update status bar
             self.status_bar.showMessage(f"Loading: {file_info.get('name', 'Unknown')}")
+            
+            # Update info panel with file info
+            self.info_panel.update_file_info(file_info)
             
             # Process the file
             self._load_and_visualize_file(file_info)
@@ -416,6 +432,36 @@ class MainWindow(QMainWindow):
             if 'date_range' in current_config and 'days' in current_config['date_range']:
                 days = current_config['date_range']['days']
                 self.time_period_combo.setCurrentText(f"{days} Days")
+    
+    def on_settings(self):
+        """Handle settings action."""
+        self.logger.info("Settings dialog requested")
+        
+        # Show settings dialog
+        dialog = SettingsDialog(self.app_controller, self)
+        
+        # Connect settings saved signal
+        dialog.settings_saved.connect(self.on_settings_saved)
+        
+        # Show dialog
+        dialog.exec()
+    
+    def on_settings_saved(self):
+        """Handle settings saved."""
+        self.logger.info("Settings saved")
+        
+        # Update UI elements
+        self.enable_aggregation_action.setChecked(self.app_controller.settings.enable_file_aggregation)
+        self.single_file_groups_action.setChecked(self.app_controller.settings.show_single_file_groups)
+        self.add_metadata_columns_action.setChecked(self.app_controller.settings.add_file_metadata_columns)
+        self.aggregate_toggle.setCurrentText("Enabled" if self.app_controller.settings.enable_file_aggregation else "Disabled")
+        
+        # Refresh file browser
+        self.file_browser.refresh_directory()
+        
+        # Refresh visualization if a file is loaded
+        if self.file_browser.get_selected_file_info():
+            self.on_refresh()
     
     def on_toggle_aggregation(self, enabled: bool):
         """
@@ -526,6 +572,9 @@ class MainWindow(QMainWindow):
                 'name': file_name,
                 'display_name': file_name.split('.')[0]
             }
+            
+            # Update info panel with file info
+            self.info_panel.update_file_info(file_info)
             
             # Process the file
             self._load_and_visualize_file(file_info)
@@ -691,7 +740,7 @@ class MainWindow(QMainWindow):
             # Calculate metrics
             metrics = self.app_controller.calculate_metrics(file_info, config)
             
-            # Update info panel
+            # Update info panel metrics
             self.info_panel.update_metrics(metrics)
             
         except Exception as e:
